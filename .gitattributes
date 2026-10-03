@@ -1,0 +1,10 @@
+# Normalizuj konce linii w repozytorium do LF; w kopii roboczej Windows
+# dostanie CRLF tam, gdzie tak dziala jego konfiguracja.
+* text=auto
+
+*.py   text eol=lf
+*.toml text eol=lf
+*.md   text eol=lf
+*.gpx  text eol=lf
+LICENSE text eol=lf
+NOTICE  text eol=lf

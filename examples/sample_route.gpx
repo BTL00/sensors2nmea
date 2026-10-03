@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="sensors2nmea sample"
+     xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Sample approach - Swinoujscie entrance</name>
+    <desc>Synthetic 5 kn track for testing sensors2nmea --gpx playback.
+          Not survey data. Do not use for navigation.</desc>
+    <time>2026-06-15T09:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>Sample approach</name>
+    <trkseg>
+      <trkpt lat="53.9080000" lon="14.2795000">
+        <ele>0.4</ele>
+        <time>2026-06-15T09:00:00Z</time>
+      </trkpt>
+      <trkpt lat="53.9082311" lon="14.2795000">
+        <ele>0.5</ele>
+        <time>2026-06-15T09:00:10Z</time>
+      </trkpt>
+      <trkpt lat="53.9084621" lon="14.2795000">
+        <ele>0.6</ele>
+        <time>2026-06-15T09:00:20Z</time>
+      </trkpt>
+      <trkpt lat="53.9086932" lon="14.2795000">
+        <ele>0.7</ele>
+        <time>2026-06-15T09:00:30Z</time>
+      </trkpt>
+      <trkpt lat="53.9089243" lon="14.2795000">
+        <ele>0.7</ele>
+        <time>2026-06-15T09:00:40Z</time>
+      </trkpt>
+      <trkpt lat="53.9091553" lon="14.2795000">
+        <ele>0.7</ele>
+        <time>2026-06-15T09:00:50Z</time>
+      </trkpt>
+      <trkpt lat="53.9093864" lon="14.2795000">
+        <ele>0.7</ele>
+        <time>2026-06-15T09:01:00Z</time>
+      </trkpt>
+      <trkpt lat="53.9096175" lon="14.2795000">
+        <ele>0.6</ele>
+        <time>2026-06-15T09:01:10Z</time>
+      </trkpt>
+      <trkpt lat="53.9098485" lon="14.2795000">
+        <ele>0.5</ele>
+        <time>2026-06-15T09:01:20Z</time>
+      </trkpt>
+      <trkpt lat="53.9100796" lon="14.2795000">
+        <ele>0.4</ele>
+        <time>2026-06-15T09:01:30Z</time>
+      </trkpt>
+      <trkpt lat="53.9103107" lon="14.2795000">
+        <ele>0.3</ele>
+        <time>2026-06-15T09:01:40Z</time>
+      </trkpt>
+      <trkpt lat="53.9105417" lon="14.2795000">
+        <ele>0.2</ele>
+        <time>2026-06-15T09:01:50Z</time>
+      </trkpt>
+      <trkpt lat="53.9107728" lon="14.2795000">
+        <ele>0.2</ele>
+        <time>2026-06-15T09:02:00Z</time>
+      </trkpt>
+      <trkpt lat="53.9110039" lon="14.2795000">
+        <ele>0.1</ele>
+        <time>2026-06-15T09:02:10Z</time>
+      </trkpt>
+      <trkpt lat="53.9112349" lon="14.2795000">
+        <ele>0.1</ele>
+        <time>2026-06-15T09:02:20Z</time>
+      </trkpt>
+      <trkpt lat="53.9114660" lon="14.2795000">
+        <ele>0.1</ele>
+        <time>2026-06-15T09:02:30Z</time>
+      </trkpt>
+      <trkpt lat="53.9116971" lon="14.2795000">
+        <ele>0.2</ele>
+        <time>2026-06-15T09:02:40Z</time>
+      </trkpt>
+      <trkpt lat="53.9119278" lon="14.2794795">
+        <ele>0.2</ele>
+        <time>2026-06-15T09:02:50Z</time>
+      </trkpt>
+      <trkpt lat="53.9121576" lon="14.2794385">
+        <ele>0.3</ele>
+        <time>2026-06-15T09:03:00Z</time>
+      </trkpt>
+      <trkpt lat="53.9123858" lon="14.2793771">
+        <ele>0.4</ele>
+        <time>2026-06-15T09:03:10Z</time>
+      </trkpt>
+      <trkpt lat="53.9126118" lon="14.2792955">
+        <ele>0.5</ele>
+        <time>2026-06-15T09:03:20Z</time>
+      </trkpt>
+      <trkpt lat="53.9128350" lon="14.2791940">
+        <ele>0.6</ele>
+        <time>2026-06-15T09:03:30Z</time>
+      </trkpt>
+      <trkpt lat="53.9130548" lon="14.2790728">
+        <ele>0.7</ele>
+        <time>2026-06-15T09:03:40Z</time>
+      </trkpt>
+      <trkpt lat="53.9132705" lon="14.2789322">
+        <ele>0.7</ele>
+        <time>2026-06-15T09:03:50Z</time>
+      </trkpt>
+      <trkpt lat="53.9134816" lon="14.2787726">
+        <ele>0.7</ele>
+        <time>2026-06-15T09:04:00Z</time>
+      </trkpt>
+      <trkpt lat="53.9136875" lon="14.2785945">
+        <ele>0.7</ele>
+        <time>2026-06-15T09:04:10Z</time>
+      </trkpt>
+      <trkpt lat="53.9138876" lon="14.2783984">
+        <ele>0.6</ele>
+        <time>2026-06-15T09:04:20Z</time>
+      </trkpt>
+      <trkpt lat="53.9140814" lon="14.2781847">
+        <ele>0.5</ele>
+        <time>2026-06-15T09:04:30Z</time>
+      </trkpt>
+      <trkpt lat="53.9142683" lon="14.2779541">
+        <ele>0.4</ele>
+        <time>2026-06-15T09:04:40Z</time>
+      </trkpt>
+      <trkpt lat="53.9144479" lon="14.2777072">
+        <ele>0.3</ele>
+        <time>2026-06-15T09:04:50Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

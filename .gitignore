@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Srodowiska wirtualne
+.venv/
+venv/
+env/
+
+# Logi z --log-file
+*.log
+
+# Slady GPS: domyslnie nie commitujemy tras z katalogu glownego, zeby prywatny
+# plik nie trafil do repo przez przypadek. Trasy celowo publikowane sa wyjete.
+/*.gpx
+!helgoland_approach.gpx
+!examples/*.gpx
+
+# Narzedzia i IDE
+.vscode/
+.idea/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Windows
+Thumbs.db
+desktop.ini
