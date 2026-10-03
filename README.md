@@ -1,7 +1,7 @@
 # sensors2nmea
 
 Turn a Windows laptop's built-in GNSS receiver into a network NMEA 0183 source
-for OpenCPN, Navionics, qtVlm or any other chart plotter — no serial cable, no
+for OpenCPN, Navionics, qtVlm or any other chart plotter - no serial cable, no
 virtual COM port, no driver hacks.
 
 Many modern laptops carry a GNSS receiver inside their WWAN (mobile broadband)
@@ -14,17 +14,20 @@ It can also **replay a recorded GPX track** instead of reading the sensors,
 which is useful for testing a plotter setup at your desk.
 
 ```
-┌──────────────────────┐      ┌──────────────┐      ┌──────────────────┐
-│ Windows Sensors API  │      │              │      │ OpenCPN          │
-│  Geolocator (GNSS)   │─────▶│ sensors2nmea │─────▶│ Navionics        │
-│  Compass             │      │   TCP :10110 │      │ qtVlm            │
-│  Inclinometer        │      │              │      │ ...many clients  │
-└──────────────────────┘      └──────────────┘      └──────────────────┘
-         or  ──▶ GPX track playback ──▶
++----------------------+
+| Windows Sensors API  |      +--------------+      +------------------+
+|  Geolocator (GNSS)   |      |              |      | OpenCPN          |
+|  Compass             | ---> | sensors2nmea | ---> | Navionics        |
+|  Inclinometer        |      |  TCP :10110  |      | qtVlm            |
++----------------------+      |              |      | ...many clients  |
+                              +--------------+      +------------------+
++----------------------+             ^
+|  GPX track file      | ------------+
++----------------------+
 ```
 
 > **This is not a certified navigation device.** See [Disclaimer](#disclaimer)
-> before you rely on it for anything. Seriously — read it.
+> before you rely on it for anything. Seriously - read it.
 
 ---
 
@@ -49,21 +52,21 @@ which is useful for testing a plotter setup at your desk.
 
 ## Features
 
-- **GNSS position** → `GPGGA`, `GPRMC` with real fix quality, not invented values
-- **Time from the receiver**, not the PC clock — sentences carry the actual fix
+- **GNSS position** -> `GPGGA`, `GPRMC` with real fix quality, not invented values
+- **Time from the receiver**, not the PC clock - sentences carry the actual fix
   timestamp, so one fix is transmitted exactly once
-- **UTC + local zone** → `GPZDA`
-- **Course and speed over ground** → `GPVTG` (many plotters prefer this over RMC)
-- **Compass heading** → `HCHDM`, `HCHDT`, `HCHDG`, with mounting-offset and
+- **UTC + local zone** -> `GPZDA`
+- **Course and speed over ground** -> `GPVTG` (many plotters prefer this over RMC)
+- **Compass heading** -> `HCHDM`, `HCHDT`, `HCHDG`, with mounting-offset and
   magnetic-variation correction
-- **Pitch and roll** → `YXXDR`
+- **Pitch and roll** -> `YXXDR`
 - **GPX playback** of tracks or routes, with speed multiplier and looping
 - **Honest fix quality**: a WiFi- or IP-derived position is flagged invalid
   instead of masquerading as a satellite fix
-- **Multi-client TCP server** — plotter, logger and a debug `telnet` at once
+- **Multi-client TCP server** - plotter, logger and a debug `telnet` at once
 - **Self-healing**: every task is supervised and restarted with backoff; sensors
   that disappear are re-acquired automatically
-- **No dependencies** for `--simulate` and `--gpx` modes — those run on plain
+- **No dependencies** for `--simulate` and `--gpx` modes - those run on plain
   Python, including on Linux and macOS
 
 ## Requirements
@@ -83,7 +86,7 @@ Get-PnpDevice -Class Sensor | Select-Object FriendlyName, Status
 
 If that lists nothing, Windows has no location sensor and only `--simulate` and
 `--gpx` will work. A USB GPS dongle that appears as a **COM port** is *not* a
-Windows location sensor — feed it to your plotter directly instead; you do not
+Windows location sensor - feed it to your plotter directly instead; you do not
 need this tool for that.
 
 ## Installation
@@ -99,7 +102,7 @@ pip install "sensors2nmea[sensors]"
 This installs a `sensors2nmea` command on your PATH. The `[sensors]` extra
 pulls in the WinRT bindings needed to read the real hardware.
 
-If you only want simulation or GPX playback, drop the extra — the core has **no
+If you only want simulation or GPX playback, drop the extra - the core has **no
 dependencies at all** and runs on Linux and macOS too:
 
 ```powershell
@@ -127,12 +130,12 @@ pip install winrt-runtime winrt-Windows.Devices.Sensors `
 python sensors2nmea.py
 ```
 
-The older monolithic `winsdk` package also works — the code tries `winrt-*`
+The older monolithic `winsdk` package also works - the code tries `winrt-*`
 first and falls back automatically.
 
 ### Enabling location access
 
-Settings → Privacy & security → Location, and turn on both:
+Settings -> Privacy & security -> Location, and turn on both:
 
 - **Location services**
 - **Let desktop apps access your location**
@@ -176,7 +179,7 @@ $c.Close()
 
 ## Connecting OpenCPN
 
-1. **Options → Connections → Add Connection**
+1. **Options -> Connections -> Add Connection**
 2. Type: **Network**, Protocol: **TCP**
 3. Address: `127.0.0.1` (same machine) or the LAN IP of the machine running it
 4. Data port: `10110`, or whatever you passed to `--port`
@@ -190,12 +193,12 @@ OpenCPN deliberately ignores such data: the ship icon will not move and the
 Dashboard shows `---` for SOG and COG even though the values are present in the
 sentences. Adding `--sim-as-real` presents the data as an ordinary GPS fix
 (`GGA` quality `1`, mode `A`) and everything appears. Do **not** use that flag
-with real sensors — there, honest source flagging matters and works correctly.
+with real sensors - there, honest source flagging matters and works correctly.
 
 **OpenCPN ignores the local-zone fields of `GPZDA`.** Its local time comes from
-its own setting, not from the NMEA stream: Dashboard preferences → *Appearance*
-→ **Local offset from UTC**. Leave it at `00:00` to follow the computer's time
-zone. Also note that the Dashboard has three different clocks — *GPS clock*
+its own setting, not from the NMEA stream: Dashboard preferences -> *Appearance*
+-> **Local offset from UTC**. Leave it at `00:00` to follow the computer's time
+zone. Also note that the Dashboard has three different clocks - *GPS clock*
 shows raw UTC, *Local GPS clock* applies that offset, *Local CPU clock* reads
 the operating system. Pick the one you actually want.
 
@@ -213,7 +216,7 @@ the operating system. Pick the one you actually want.
 | `--stale SEC` | `5` | Stop sending after this long without a fresh reading |
 | `-v`, `--verbose` | off | Also print sentences to stdout |
 | `--status-interval S` | `60` | Status heartbeat in the log; `0` disables |
-| `--log-file PATH` | – | Append diagnostics to a file as well as stderr |
+| `--log-file PATH` | - | Append diagnostics to a file as well as stderr |
 | `--version` | | Print version and exit |
 
 ### Heading correction
@@ -221,14 +224,14 @@ the operating system. Pick the one you actually want.
 | Option | Default | Meaning |
 |---|---|---|
 | `--offset DEG` | `0` | Added to the compass reading: mounting error, deviation |
-| `--variation DEG` | – | Magnetic variation, east positive. Used only when Windows does not supply a true heading |
+| `--variation DEG` | - | Magnetic variation, east positive. Used only when Windows does not supply a true heading |
 
 ### Simulation and playback
 
 | Option | Default | Meaning |
 |---|---|---|
 | `--simulate` | off | Synthetic data instead of sensors |
-| `--gpx FILE` | – | Replay a GPX track or route. Implies simulation mode |
+| `--gpx FILE` | - | Replay a GPX track or route. Implies simulation mode |
 | `--gpx-speed X` | `1` | Playback rate multiplier |
 | `--gpx-knots KN` | `5` | Speed used only when the GPX has no `<time>` stamps |
 | `--gpx-loop` | off | Restart from the beginning at the end of the track |
@@ -237,7 +240,7 @@ the operating system. Pick the one you actually want.
 ## What the data actually means
 
 This tool tries hard not to invent numbers. That occasionally makes the output
-look emptier than other NMEA sources — deliberately.
+look emptier than other NMEA sources - deliberately.
 
 **The satellite-count field in `GPGGA` is always empty.** Windows does not
 expose how many satellites were used, nor a list of satellites in view. A number
@@ -253,8 +256,8 @@ empty. It is not derived from the accuracy radius by some invented factor.
 | `SATELLITE` | 1 | A | A | yes |
 | `WI_FI`, `CELLULAR`, `IP_ADDRESS` | 0 | V | N | **no** |
 | `DEFAULT`, `OBFUSCATED`, `UNKNOWN` | 0 | V | N | **no** |
-| `--simulate` / `--gpx` | 8 | A | S | no — simulation |
-| …plus `--sim-as-real` | 1 | A | A | no — deliberately disguised |
+| `--simulate` / `--gpx` | 8 | A | S | no - simulation |
+| ...plus `--sim-as-real` | 1 | A | A | no - deliberately disguised |
 
 Windows will silently fall back to WiFi or IP geolocation when satellites are
 unavailable, and such a position can be tens of kilometres off. Those fixes are
@@ -278,13 +281,13 @@ with a fresh time. If your consumer needs an uninterrupted stream, use
 Accepts tracks (`<trkpt>`), routes (`<rtept>`) and loose waypoints (`<wpt>`),
 with or without XML namespaces. Position is interpolated linearly between
 points, so output is smooth at any `--rate`. COG is the bearing of the current
-leg — with linear interpolation that is the exact direction of travel, not an
+leg - with linear interpolation that is the exact direction of travel, not an
 approximation. SOG is leg length divided by leg duration.
 
 Real-world GPX files are messy, and three specific hazards are handled:
 
 - **Nonsense `<ele>`.** Garmin exports write `1e25` to mean "no elevation".
-  Values outside −1000…10000 m are rejected and the altitude field is left
+  Values outside -1000...10000 m are rejected and the altitude field is left
   empty; the count of rejects is logged.
 - **Relative timestamps.** Files from gpx.studio carry dates of `1970-01-01`.
   Stamps are used *only* as intervals between points; sentences get the current
@@ -315,7 +318,7 @@ rather than fatal:
   port already in use. The GPX file is validated *before* the port is bound, so
   a bad file never leaves a socket behind.
 - **Sensors are re-acquired.** A compass or receiver missing at startup is
-  retried every 15 seconds — USB hardware may appear later. A sensor that starts
+  retried every 15 seconds - USB hardware may appear later. A sensor that starts
   throwing errors is released after 10 consecutive failures and acquired again
   from scratch.
 - **Repeated errors are rate-limited** so a failing sensor cannot flood the log.
@@ -335,7 +338,7 @@ interrupted with `Ctrl+C`.
 
 **Plotter connects but shows nothing, or shows obviously wrong data.**
 Check for a port conflict. Windows permits two processes to listen on the same
-port if one binds `127.0.0.1` and the other `0.0.0.0` — and a client connecting
+port if one binds `127.0.0.1` and the other `0.0.0.0` - and a client connecting
 to `localhost` reaches the first one, not necessarily yours:
 
 ```powershell
@@ -344,8 +347,8 @@ Get-Process -Id <OwningProcess>
 ```
 
 **Ship icon points north and Dashboard shows `---`.**
-Either heading sentences are not being sent — do not restrict `--sentences`, the
-default includes `hdg` and `vtg` — or you are replaying GPX without
+Either heading sentences are not being sent - do not restrict `--sentences`, the
+default includes `hdg` and `vtg` - or you are replaying GPX without
 `--sim-as-real`. See [Connecting OpenCPN](#connecting-opencpn).
 
 **No GNSS time in the Dashboard.**
@@ -354,7 +357,7 @@ instead. Confirm `GPRMC` or `GPZDA` is actually arriving with `-v`.
 
 **Position is far from where you are.**
 Look at the logged position source. `WI_FI` or `IP_ADDRESS` means Windows has no
-satellite fix — go outdoors or near a window, and give the receiver a few
+satellite fix - go outdoors or near a window, and give the receiver a few
 minutes for a cold start. Such fixes are correctly flagged invalid.
 
 **`Geolocator: brak dostepu` / access denied.**
@@ -366,7 +369,7 @@ Install the extras: `pip install -e ".[sensors]"`, or run `--simulate` / `--gpx`
 which need nothing.
 
 **Empty SOG and COG fields in the sentences.**
-Expected when the fix carries no motion measurement — Windows returns `NaN` for
+Expected when the fix carries no motion measurement - Windows returns `NaN` for
 speed and heading on WiFi and IP fixes. An empty field is correct NMEA; the
 literal text `nan` would not be.
 
@@ -380,8 +383,8 @@ behaves differently:
 | Laptop | Lenovo ThinkPad T480s (20L8S4PR0U) |
 | OS | Windows 11 Pro 10.0.22631 (build 22631) |
 | Python | 3.10.11 |
-| GNSS | **Fibocom GNSS Sensor** — the GNSS half of a Fibocom L850-GL WWAN module (Intel XMM7360-P) |
-| Compass / inclinometer | none — the `Sensor` device class contains only the GNSS sensor |
+| GNSS | **Fibocom GNSS Sensor** - the GNSS half of a Fibocom L850-GL WWAN module (Intel XMM7360-P) |
+| Compass / inclinometer | none - the `Sensor` device class contains only the GNSS sensor |
 | Chart plotter | OpenCPN 5.12.4-0+37fd0cd |
 
 The receiver is worth a note, because it is what makes this approach work: the
@@ -402,7 +405,7 @@ compass are very welcome.
 
 ## Known limitations
 
-- No `GPGSV` and no satellite count — Windows does not expose either
+- No `GPGSV` and no satellite count - Windows does not expose either
 - No `GPGSA`, although PDOP and VDOP are available and could populate it
 - The magnetic-course field of `GPVTG` is left empty; only true course is known
 - No `GPGST`: Windows reports an accuracy radius rather than per-axis deviations,
@@ -448,10 +451,10 @@ for a particular purpose and non-infringement. See sections 7 and 8 of the
 
 ## License and attribution
 
-Licensed under the **Apache License, Version 2.0** — see [LICENSE](LICENSE).
+Licensed under the **Apache License, Version 2.0** - see [LICENSE](LICENSE).
 
 This is genuine open source: use it, modify it, redistribute it, build a
-commercial product on it. One condition — **you must credit it.**
+commercial product on it. One condition - **you must credit it.**
 
 Section 4(d) of the licence requires that the [NOTICE](NOTICE) file be
 reproduced in any derivative work you distribute. Concretely:
@@ -466,7 +469,7 @@ reproduced in any derivative work you distribute. Concretely:
 - The name `sensors2nmea` and the author's name may not be used to endorse or
   promote your product without separate written permission.
 
-If the Apache terms do not suit your use case, get in touch — other arrangements
+If the Apache terms do not suit your use case, get in touch - other arrangements
 are possible.
 
 ### Contributing
