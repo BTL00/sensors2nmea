@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-sensors2nmea.py - Windows Sensors API -> NMEA 0183 przez TCP.
+sensors2nmea.py - Windows Sensors API -> NMEA 0183 over TCP.
 
-Czyta Geolocator, Compass i Inclinometer z Windows.Devices.* (WinRT) i rozglasza
-zdania NMEA 0183 do wszystkich podlaczonych klientow TCP (OpenCPN, Navionics,
-qtVlm itp.). Potrafi tez odtworzyc zapisana trase z pliku GPX zamiast czytac
-czujniki - do testowania plotera bez wychodzenia w morze.
+Reads Geolocator, Compass and Inclinometer from Windows.Devices.* (WinRT) and
+broadcasts NMEA 0183 sentences to every connected TCP client (OpenCPN,
+Navionics, qtVlm and friends). It can also replay a recorded GPX track instead
+of reading the sensors, which lets you test a plotter setup at your desk.
 
 ===============================================================================
-  INSTALACJA
+  INSTALLATION
 ===============================================================================
 
 Windows 10/11, Python 3.9+:
@@ -16,196 +16,212 @@ Windows 10/11, Python 3.9+:
   pip install winrt-runtime winrt-Windows.Devices.Sensors \
               winrt-Windows.Devices.Geolocation winrt-Windows.Foundation
 
-Alternatywnie starszy monolit: pip install winsdk (kod obsluguje oba - patrz
-import_winrt()). Tryby --simulate i --gpx nie wymagaja zadnego z nich.
+The older monolithic "winsdk" package also works - see import_winrt(), which
+tries both. The --simulate and --gpx modes need neither.
 
-Dostep do lokalizacji musi byc wlaczony w Ustawienia > Prywatnosc > Lokalizacja,
-inaczej Geolocator.request_access_async() zwroci odmowe i pozycji nie bedzie.
+Location access must be enabled in Settings > Privacy & security > Location,
+otherwise Geolocator.request_access_async() is denied and no position arrives.
 
 ===============================================================================
-  URUCHOMIENIE
+  RUNNING
 ===============================================================================
 
   python sensors2nmea.py                       # port 10110, 0.0.0.0, 5 Hz
-  python sensors2nmea.py --port 15555 -v       # inny port, -v drukuje zdania
-                                               # takze na stdout (diagnostyka)
-  python sensors2nmea.py --sentences hdg       # tylko kurs z kompasu
-  python sensors2nmea.py --simulate            # dane syntetyczne, bez czujnikow
-  python sensors2nmea.py --gpx trasa.gpx --sim-as-real
-  python sensors2nmea.py --gpx trasa.gpx --gpx-speed 10 --gpx-loop
+  python sensors2nmea.py --port 15555 -v       # other port; -v also echoes
+                                               # sentences to stdout
+  python sensors2nmea.py --sentences hdg       # compass heading only
+  python sensors2nmea.py --simulate            # synthetic data, no sensors
+  python sensors2nmea.py --gpx track.gpx --sim-as-real
+  python sensors2nmea.py --gpx track.gpx --gpx-speed 10 --gpx-loop
 
-Trzy zrodla danych, wzajemnie wykluczajace sie (pierwszenstwo w tej kolejnosci):
+Three mutually exclusive data sources, in order of precedence:
 
-  --gpx PLIK   odtwarzanie trasy z pliku GPX
-  --simulate   dane syntetyczne (okrag wokol Szczecina)
-  (domyslnie)  prawdziwe czujniki Windows
-
-===============================================================================
-  ZDANIA
-===============================================================================
-
-Grupy wybierane przez --sentences (domyslnie wszystkie):
-
-  gps : GPGGA, GPRMC         pozycja, wysokosc, SOG, COG, jakosc fixa
-  zda : GPZDA                czas UTC, data, offset strefy lokalnej
-  vtg : GPVTG                kurs i predkosc nad dnem
-  hdg : HCHDM, HCHDT, HCHDG  kurs magnetyczny / rzeczywisty (Compass)
-  att : YXXDR                przechyl i trym (Inclinometer)
-
-Uwaga praktyczna: czesc ploterow czyta COG/SOG z VTG, a nie z RMC. Jesli
-Dashboard w OpenCPN pokazuje "---", najpierw sprawdz, czy VTG jest w strumieniu.
+  --gpx FILE   replay a track from a GPX file
+  --simulate   synthetic data (a circle off Szczecin)
+  (default)    the real Windows sensors
 
 ===============================================================================
-  CZAS - DLACZEGO Z ODBIORNIKA, A NIE Z ZEGARA PC
+  SENTENCES
 ===============================================================================
 
-Zdania pozycyjne (GPGGA/GPRMC/GPVTG/GPZDA) sa znakowane czasem fixa
-(Geocoordinate.timestamp), nie czasem nadania. To nie kosmetyka: Geolocator
-raportuje ok. 1 Hz, a --rate domyslnie 5 Hz, wiec przy stemplowaniu zegarem PC
-ten sam pomiar szedlby pieciokrotnie z pieciu roznymi, zmyslonymi znacznikami.
+Groups selected with --sentences (all of them by default):
 
-Konsekwencja: kazdy fix jest wysylany DOKLADNIE RAZ, a gdy odbiornik zgubi
-pomiar, w strumieniu pojawia sie cisza zamiast starej pozycji pod nowym czasem.
-Flaga --gps-repeat przywraca powtarzanie ostatniego fixa z czestotliwoscia
---rate dla odbiorcow, ktorzy wymagaja nieprzerwanego strumienia.
+  gps : GPGGA, GPRMC         position, altitude, SOG, COG, fix quality
+  zda : GPZDA                UTC time, date, local zone offset
+  vtg : GPVTG                course and speed over ground
+  hdg : HCHDM, HCHDT, HCHDG  magnetic / true heading (Compass)
+  att : YXXDR                pitch and roll (Inclinometer)
 
-GPZDA niesie tez offset strefy lokalnej. Konwencja znaku jest w standardzie
-udokumentowana sprzecznie (NMEA 0183: ujemny dla dlugosci wschodnich; Trimble:
-odwrotnie), tu uzyta jest interpretacja intuicyjna - UTC + offset = czas
-lokalny, czyli +02 dla Polski w CEST. OpenCPN i tak tych pol nie czyta: czas
-lokalny bierze z ustawienia "Local offset from UTC" w preferencjach Dashboard.
+Practical note: many plotters read COG/SOG from VTG rather than from RMC. If the
+OpenCPN Dashboard shows "---", first check that VTG is present in the stream.
 
 ===============================================================================
-  JAKOSC FIXA - CO JEST PRAWDA, A CO NIE
+  TIME - WHY IT COMES FROM THE RECEIVER, NOT THE PC CLOCK
 ===============================================================================
 
-Windows nie udostepnia listy satelitow ani ich LICZBY, wiec pole "satellites
-used" w GPGGA zostaje PUSTE zamiast zmyslonej wartosci. GPGSV jest z tego
-powodu niemozliwe do uczciwego wygenerowania. HDOP pochodzi z prawdziwego
-GeocoordinateSatelliteData.horizontal_dilution_of_precision; gdy sprzet go nie
-podaje, pole tez zostaje puste.
+Position sentences (GPGGA/GPRMC/GPVTG/GPZDA) are stamped with the fix time
+(Geocoordinate.timestamp), not the time of transmission. This is not cosmetic:
+Geolocator reports at roughly 1 Hz while --rate defaults to 5 Hz, so stamping
+with the PC clock would send the same measurement five times under five
+invented timestamps.
 
-Jakosc fixa wynika z Geocoordinate.position_source - patrz fix_quality():
+Consequence: each fix is transmitted EXACTLY ONCE, and when the receiver drops
+a measurement the stream falls silent instead of repeating a stale position
+under a fresh timestamp. The --gps-repeat flag restores continuous repetition
+of the last fix at --rate for consumers that require an unbroken stream.
 
-  zrodlo                           GGA  RMC  tryb FAA
+GPZDA also carries the local zone offset. The sign convention is documented
+inconsistently across sources (NMEA 0183: negative for eastern longitudes;
+Trimble: the other way round), so the intuitive reading is used here -
+UTC + offset = local time, i.e. +02 for Poland on CEST. OpenCPN ignores those
+fields anyway: it takes local time from the "Local offset from UTC" setting in
+the Dashboard preferences.
+
+===============================================================================
+  FIX QUALITY - WHAT IS TRUE AND WHAT IS NOT
+===============================================================================
+
+Windows exposes neither the list of satellites nor their COUNT, so the
+"satellites used" field in GPGGA is left EMPTY instead of carrying an invented
+value. GPGSV therefore cannot be generated honestly at all. HDOP comes from the
+real GeocoordinateSatelliteData.horizontal_dilution_of_precision; when the
+hardware does not report it, that field stays empty too.
+
+Fix quality follows Geocoordinate.position_source - see fix_quality():
+
+  source                           GGA  RMC  FAA mode
   SATELLITE                          1    A    A
   WI_FI / CELLULAR / IP_ADDRESS      0    V    N
   DEFAULT / OBFUSCATED / UNKNOWN     0    V    N
-  --simulate lub --gpx               8    A    S
-  ...z flaga --sim-as-real           1    A    A
+  --simulate or --gpx                8    A    S
+  ...with --sim-as-real              1    A    A
 
-Tylko fix satelitarny jest fixem nawigacyjnym. Pozycja z WiFi, sieci komorkowej
-lub adresu IP ma dokladnosc od setek metrow do dziesiatek kilometrow, wiec jest
-oznaczana jako nieprawidlowa - wspolrzedne nadal ida w zdaniu, ale odbiorca wie,
-ze nie wolno na nich nawigowac. Zmiana zrodla trafia do logu.
+Only a satellite fix is a navigational fix. A position derived from WiFi, the
+cellular network or an IP address is accurate to anywhere between hundreds of
+metres and tens of kilometres, so it is flagged invalid - the coordinates still
+travel in the sentence, but the consumer knows not to navigate on them. Every
+change of source is logged.
 
-Przy takim fixie Windows zwraca NaN (a nie None) w speed i heading, bo nie ma
-pomiaru ruchu. Wszystkie odczyty przechodza wiec przez num(), ktore zamienia
-NaN i nieskonczonosci na None - inaczej do pola liczbowego NMEA trafia tekst
-"nan" i zdanie jest formalnie niepoprawne. Brakujaca wartosc daje puste pole.
+On such a fix Windows returns NaN (not None) for speed and heading, because
+there is no motion measurement. Every reading therefore passes through num(),
+which maps NaN and infinities to None - otherwise the literal text "nan" ends
+up in a numeric NMEA field and the sentence is malformed. A missing value
+yields an empty field.
 
---sim-as-real to swiadome klamstwo na zyczenie: OpenCPN IGNORUJE dane oznaczone
-jako symulator (GGA 8 / tryb S) i pokazuje "---" w SOG i COG, mimo ze status RMC
-jest "A" i wartosci sa obecne. Bez tej flagi odtwarzanie GPX nie bedzie w nim
-widoczne. Nie uzywaj jej z prawdziwymi czujnikami - tam uczciwe oznaczanie
-zrodla ma znaczenie i dziala poprawnie.
-
-===============================================================================
-  KURS Z KOMPASU
-===============================================================================
-
-Compass podaje kurs magnetyczny, a czasem takze rzeczywisty (Windows liczy go
-sam, jesli zna deklinacje dla biezacej pozycji). Odwzorowanie na zdania:
-
-  HCHDM   kurs magnetyczny, zawsze gdy kompas cokolwiek podaje
-  HCHDT   kurs rzeczywisty - z odczytu Windows, albo wyliczony z --variation
-  HCHDG   kurs magnetyczny + pole dewiacji/deklinacji policzone z roznicy
-
-  --offset STOPNIE     korekta dodawana do odczytu: blad montazu, dewiacja
-                       wlasna. Stosowana do obu kursow, przed obliczeniem pol.
-  --variation STOPNIE  deklinacja magnetyczna (E dodatnia). Uzywana TYLKO gdy
-                       Windows nie podaje kursu rzeczywistego - wtedy HCHDT
-                       powstaje jako kurs magnetyczny + deklinacja.
-
-Bez --variation i bez kursu rzeczywistego z Windows wysylane jest samo HCHDM
-(oraz HCHDG z pustym polem deklinacji) - uczciwiej niz zgadywac deklinacje.
-
-Nie kazdy komputer ma kompas ani inklinometr; Compass.get_default() zwraca
-wtedy None, co jest logowane przy starcie, a odpowiednie zdania po prostu nie
-powstaja. Odczyty kompasu podlegaja --stale niezaleznie od pozycji.
+--sim-as-real is a deliberate lie on request: OpenCPN IGNORES data flagged as
+simulator output (GGA 8 / mode S) and shows "---" for SOG and COG even though
+the RMC status is "A" and the values are present. Without that flag, GPX
+playback is invisible in it. Do not use it with real sensors - there, honest
+source flagging matters and works correctly.
 
 ===============================================================================
-  ODTWARZANIE GPX
+  COMPASS HEADING
 ===============================================================================
 
-Obsluguje track (<trkpt>), route (<rtept>) i luzne <wpt>, niezaleznie od
-namespace'u. Pozycja jest interpolowana liniowo miedzy punktami, wiec wyjscie
-jest gladkie przy dowolnym --rate; COG to azymut odcinka (przy interpolacji
-liniowej to dokladny kierunek ruchu, nie przyblizenie), a SOG to dlugosc odcinka
-podzielona przez jego czas.
+Compass reports a magnetic heading, and sometimes a true one as well (Windows
+computes it itself when it knows the declination for the current position).
+Mapping onto sentences:
 
-Trzy pulapki realnych plikow, ktore kod obsluguje wprost:
+  HCHDM   magnetic heading, whenever the compass reports anything
+  HCHDT   true heading - from the Windows reading, or derived from --variation
+  HCHDG   magnetic heading plus a deviation/variation field computed from the
+          difference between the two
 
-  * <ele> bywa sentinelem "brak danych" - eksporty Garmina wpisuja tam 1e25.
-    Wartosci poza zakresem -1000..10000 m sa odrzucane, a wysokosc w GGA
-    zostaje pusta. Liczba odrzuconych trafia do logu.
+  --offset DEGREES     correction added to the reading: mounting error, own
+                       deviation. Applied to both headings before the fields
+                       are computed.
+  --variation DEGREES  magnetic variation (east positive). Used ONLY when
+                       Windows does not supply a true heading - HCHDT is then
+                       produced as magnetic heading plus variation.
 
-  * <time> bywa wzgledny - pliki z gpx.studio maja daty 1970-01-01. Znaczniki
-    sluza WYLACZNIE jako odstepy miedzy punktami; zdania dostaja biezacy czas
-    UTC. Wstawienie ich jako czasu absolutnego dalo by w RMC date 010170.
-    Gdy <time> nie ma wcale, tempo bierze sie z --gpx-knots.
+Without --variation and without a true heading from Windows, only HCHDM is sent
+(plus HCHDG with an empty variation field) - more honest than guessing the
+declination.
 
-  * punkty zdublowane - odcinki o zerowym czasie lub zerowej dlugosci sa
-    powszechne (w testowej trasie 206 z 594 mialo zerowy czas). Przy zerowym
-    czasie SOG i COG sa przenoszone z ostatniego sensownego odcinka, inaczej
-    predkosc spadalaby do zera mimo ruchu, a kurs skakalby losowo.
-
---gpx-speed skaluje tempo odtwarzania, ale NIE skaluje raportowanego SOG: przy
-x30 statek przemierza mape trzydziestokrotnie szybciej, wciaz podajac prawdziwe
-2.7 kn z zapisu. Jest to celowe - alternatywa (81 kn) bylaby fikcja, ktora czesc
-ploterow odrzuca jako nierealna. Przy --gpx-speed 1 problem nie istnieje.
-
-W trybie GPX kompas dostaje kurs rowny COG, wiec HCHDM/HCHDG dzialaja.
-Przechylow nie ma skad wziac, wiec YXXDR nie jest wysylane.
+Not every computer has a compass or an inclinometer; Compass.get_default() then
+returns None, which is logged at startup, and the corresponding sentences
+simply are not produced. Compass readings are subject to --stale independently
+of the position.
 
 ===============================================================================
-  ARCHITEKTURA
+  GPX TRACK PLAYBACK
 ===============================================================================
 
-Trzy wspolbiezne zadania asyncio nad wspolnym obiektem State:
+Handles tracks (<trkpt>), routes (<rtept>) and loose waypoints (<wpt>),
+regardless of XML namespace. Position is interpolated linearly between points,
+so the output is smooth at any --rate; COG is the bearing of the current leg
+(with linear interpolation that is the exact direction of travel, not an
+approximation), and SOG is leg length divided by leg duration.
 
-  zrodlo danych   sensor_task / simulate_task / gpx_task - zapisuje do State
-  broadcast_loop  czyta State, buduje zdania, rozsyla do klientow z --rate
-  serve_forever   przyjmuje polaczenia TCP
+Three hazards of real-world files are handled explicitly:
 
-State trzyma ostatni odczyt; wszystkie pola sa Optional, bo "brak odczytu" to
-normalny stan, nie blad. Licznik pos_seq rosnie przy kazdym nowym fixie i sluzy
-broadcast_loop do rozpoznania, czy pozycja jest nowa (patrz --gps-repeat wyzej).
-Swiezosc pilnuje --stale, liczony na time.monotonic(), zeby zmiana zegara
-systemowego nie wplynela na dzialanie.
+  * <ele> is sometimes a "no data" sentinel - Garmin exports write 1e25 there.
+    Values outside -1000..10000 m are rejected and the altitude field in GGA is
+    left empty. The number of rejects is logged.
 
-Callback Geolocatora przychodzi z watku WinRT, wiec dane sa przekazywane do
-petli asyncio przez loop.call_soon_threadsafe() - bez tego byloby to
-niezabezpieczone wspolbiezne pisanie do State.
+  * <time> is sometimes relative - files from gpx.studio carry dates of
+    1970-01-01. Stamps are used ONLY as intervals between points; sentences get
+    the current UTC time. Taking them as absolute would put 010170 in the RMC
+    date field. When <time> is absent entirely, the pace comes from
+    --gpx-knots.
 
-gpx_sample() jest czysta funkcja wydzielona z petli odtwarzania, zeby dala sie
-testowac bez zegara i gniazd.
+  * duplicate points - legs of zero duration or zero length are common (in the
+    track this was developed against, 206 of 594 legs had zero duration). On a
+    zero-duration leg SOG and COG carry over from the last meaningful leg,
+    otherwise the speed would drop to zero mid-motion and the course would jump
+    at random.
+
+--gpx-speed scales the playback pace but does NOT scale the reported SOG: at
+x30 the vessel crosses the chart thirty times faster while still reporting the
+recorded 2.7 kn. This is deliberate - the alternative, 81 kn, is a fiction that
+some plotters reject as unrealistic. At --gpx-speed 1 the question does not
+arise.
+
+In GPX mode the compass is fed the current COG, so HCHDM/HCHDG work. There is
+no source for attitude, so YXXDR is not emitted.
 
 ===============================================================================
-  ZNANE OGRANICZENIA
+  ARCHITECTURE
 ===============================================================================
 
-  * brak GPGSV i liczby satelitow - Windows tego nie udostepnia
-  * brak GPGSA, choc PDOP/VDOP sa dostepne w GeocoordinateSatelliteData
-  * kurs magnetyczny w VTG zostaje pusty - znany jest tylko rzeczywisty
-  * GPGST nie jest generowane; Windows podaje promien dokladnosci, nie
-    odchylenia na osie, a altitude_accuracy czesto jest None
-  * serwer nie ma limitu liczby klientow ani uwierzytelniania - przeznaczony do
-    sieci lokalnej; --host 0.0.0.0 wystawia go na wszystkie interfejsy
-  * Windows pozwala dwoma procesom nasluchiwac na tym samym porcie, jesli jeden
-    wiaze 127.0.0.1, a drugi 0.0.0.0 - wtedy klient z localhost trafia do tego
-    pierwszego. Przy "niby dziala, ale dane sa dziwne" sprawdz konflikt portu
-    przez: Get-NetTCPConnection -LocalPort <port>
+Three concurrent asyncio tasks over a shared State object:
+
+  data source     sensor_task / simulate_task / gpx_task - writes into State
+  broadcast_loop  reads State, builds sentences, sends to clients at --rate
+  serve_forever   accepts TCP connections
+
+State holds the most recent reading; every field is Optional, because "no
+reading" is a normal condition rather than an error. The pos_seq counter is
+incremented on every new fix and lets broadcast_loop tell whether the position
+is new (see --gps-repeat above). Freshness is enforced by --stale, measured on
+time.monotonic() so that a system clock change cannot affect operation.
+
+The Geolocator callback arrives on a WinRT thread, so data is handed to the
+asyncio loop through loop.call_soon_threadsafe() - without it this would be
+unsynchronised concurrent writing into State.
+
+gpx_sample() is a pure function extracted from the playback loop so that it can
+be tested without a clock or sockets.
+
+Every long-running task runs under supervise(), which logs a traceback and
+restarts it with exponential backoff. Unrecoverable conditions raise Fatal and
+terminate the program with a readable message instead of retrying forever.
+
+===============================================================================
+  KNOWN LIMITATIONS
+===============================================================================
+
+  * no GPGSV and no satellite count - Windows does not expose either
+  * no GPGSA, although PDOP/VDOP are available in GeocoordinateSatelliteData
+  * the magnetic course field in VTG is left empty - only true course is known
+  * GPGST is not generated; Windows reports an accuracy radius rather than
+    per-axis deviations, and altitude_accuracy is frequently None
+  * the server has no client limit and no authentication - it is meant for a
+    trusted local network; --host 0.0.0.0 exposes it on every interface
+  * Windows lets two processes listen on the same port if one binds 127.0.0.1
+    and the other 0.0.0.0 - a client on localhost then reaches the former.
+    When things "sort of work but the data looks wrong", check for a port
+    conflict with: Get-NetTCPConnection -LocalPort <port>
 """
 
 import argparse
@@ -223,26 +239,29 @@ __version__ = "1.0.0"
 
 
 # --------------------------------------------------------------------------- #
-# Diagnostyka i odpornosc
+# Diagnostics and resilience
 # --------------------------------------------------------------------------- #
 class Fatal(Exception):
-    """Blad, ktorego ponawianie nie ma sensu: zly plik, brak biblioteki, zajety
-    port. Nadzorca nie restartuje zadania, ktore to zglosi - konczymy z
-    czytelnym komunikatem zamiast petlic bez szans na sukces."""
+    """An error there is no point in retrying: a bad file, a missing library, a
+    port already in use. The supervisor does not restart a task that raises
+    this - we exit with a readable message instead of looping with no prospect
+    of success."""
 
 
 def make_log(path=None):
-    """Zwraca log(msg, level, exc). Pisze na stderr, opcjonalnie tez do pliku.
+    """Returns log(msg, level, exc). Writes to stderr, and to a file if asked.
 
-    stderr, nie stdout, bo stdout moze byc zajety przez -v (strumien zdan) i
-    przekierowany do potoku - diagnostyka musi byc widoczna osobno.
+    stderr rather than stdout, because stdout may be carrying the sentence
+    stream under -v and be redirected into a pipe - diagnostics have to stay
+    visible separately.
     """
     fh = None
     if path:
         try:
             fh = open(path, "a", encoding="utf-8")
         except OSError as e:
-            print(f"UWAGA: nie moge pisac do {path}: {e}", file=sys.stderr, flush=True)
+            print(f"WARNING: cannot write to {path}: {e}",
+                  file=sys.stderr, flush=True)
 
     def log(msg, level="INFO", exc=False):
         ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
@@ -255,27 +274,27 @@ def make_log(path=None):
                 fh.write(line + "\n")
                 fh.flush()
             except OSError:
-                pass   # dysk pelny nie moze zabic rozsylania zdan
+                pass   # a full disk must not kill the broadcast
 
     return log
 
 
 async def supervise(name, factory, log, max_delay=30.0, healthy_after=60.0):
-    """Trzyma zadanie w ruchu: po awarii loguje slad i restartuje z backoffem.
+    """Keeps a task running: logs a traceback on failure and restarts it.
 
-    factory() tworzy swiezy coroutine przy kazdej probie - nie da sie czekac
-    dwa razy na ten sam obiekt. Opoznienie rosnie dwukrotnie do max_delay i
-    wraca do 1 s, gdy zadanie przezylo healthy_after sekund; bez tego warunku
-    zadanie padajace natychmiast po starcie krecilo by sie w kolko bez przerwy.
-    Fatal i CancelledError przechodza w gore - pierwszy jest nieodwracalny,
-    drugi to normalne zamykanie aplikacji.
+    factory() builds a fresh coroutine on every attempt - the same object
+    cannot be awaited twice. The delay doubles up to max_delay and resets to
+    1 s once a task has survived healthy_after seconds; without that condition
+    a task failing immediately after start would spin without pause. Fatal and
+    CancelledError propagate - the first is unrecoverable, the second is the
+    normal shutdown path.
     """
     delay = 1.0
     while True:
         started = time.monotonic()
         try:
             await factory()
-            log(f"{name}: zadanie zakonczylo sie samo (nieoczekiwanie)", "WARN")
+            log(f"{name}: task returned on its own (unexpected)", "WARN")
         except asyncio.CancelledError:
             raise
         except Fatal:
@@ -284,25 +303,26 @@ async def supervise(name, factory, log, max_delay=30.0, healthy_after=60.0):
             alive = time.monotonic() - started
             if alive >= healthy_after:
                 delay = 1.0
-            log(f"{name}: awaria po {alive:.0f}s ({type(e).__name__}: {e}); "
-                f"restart za {delay:.0f}s", "ERROR", exc=True)
+            log(f"{name}: failed after {alive:.0f}s ({type(e).__name__}: {e}); "
+                f"restarting in {delay:.0f}s", "ERROR", exc=True)
         else:
             if time.monotonic() - started >= healthy_after:
                 delay = 1.0
         await asyncio.sleep(delay)
         delay = min(delay * 2.0, max_delay)
-        log(f"{name}: restart", "WARN")
+        log(f"{name}: restarting", "WARN")
 
 
 # --------------------------------------------------------------------------- #
 # NMEA helpers
 # --------------------------------------------------------------------------- #
 def num(v) -> Optional[float]:
-    """Liczba skonczona albo None.
+    """A finite number, or None.
 
-    Windows zwraca NaN (nie None) w Geocoordinate.speed i .heading, gdy fix nie
-    niesie pomiaru ruchu - typowo przy pozycji z WiFi lub adresu IP. Bez tego
-    filtra do pola liczbowego NMEA trafia tekst "nan" i zdanie jest niepoprawne.
+    Windows returns NaN (not None) in Geocoordinate.speed and .heading when the
+    fix carries no motion measurement - typically on a WiFi or IP-derived
+    position. Without this filter the literal text "nan" lands in a numeric
+    NMEA field and the sentence is malformed.
     """
     if v is None:
         return None
@@ -337,7 +357,7 @@ def lon_field(lon: float):
 
 
 class State:
-    # Wszystko opcjonalne: "brak odczytu" to normalny stan, a nie blad.
+    # Everything optional: "no reading" is a normal condition, not an error.
     def __init__(self):
         # position
         self.lat: Optional[float] = None
@@ -347,11 +367,11 @@ class State:
         self.cog: Optional[float] = None   # deg
         self.acc: Optional[float] = None   # m
         self.pos_time = 0.0                # monotonic
-        self.pos_utc: Optional[datetime] = None  # czas fixa UTC (z odbiornika)
-        self.pos_seq = 0     # licznik fixow, rosnie przy kazdym nowym odczycie
-        self.pos_source: Optional[str] = None  # SATELLITE / WI_FI / IP_ADDRESS / ...
-        self.hdop: Optional[float] = None  # realny HDOP z SatelliteData
-        self.gps_status: Optional[str] = None  # PositionStatus z Geolocatora
+        self.pos_utc: Optional[datetime] = None  # fix time, UTC, from receiver
+        self.pos_seq = 0     # fix counter, incremented on every new reading
+        self.pos_source: Optional[str] = None  # SATELLITE / WI_FI / IP_ADDRESS
+        self.hdop: Optional[float] = None  # real HDOP from SatelliteData
+        self.gps_status: Optional[str] = None  # PositionStatus from Geolocator
         # compass
         self.hdg_mag: Optional[float] = None
         self.hdg_true: Optional[float] = None
@@ -364,10 +384,11 @@ class State:
 
 
 def fmt_zone(total_minutes: int):
-    """Offset w minutach -> (godziny, minuty) w formacie ZDA.
+    """Offset in minutes -> (hours, minutes) in ZDA format.
 
-    Wg NMEA minuty nosza ten sam znak co godziny, wiec znak trafia tylko na
-    pole godzin, a minuty zostaja bezwzgledne (istotne dla stref typu -03:30).
+    Per NMEA the minutes carry the same sign as the hours, so the sign goes on
+    the hours field only and the minutes stay absolute (which matters for zones
+    such as -03:30).
     """
     sign = "-" if total_minutes < 0 else ""
     m = abs(total_minutes)
@@ -375,7 +396,7 @@ def fmt_zone(total_minutes: int):
 
 
 def zone_fields(utc: datetime):
-    """Offset strefy lokalnej obowiazujacy w podanej chwili UTC (uwzglednia DST)."""
+    """Local zone offset in effect at the given UTC instant (DST aware)."""
     off = utc.astimezone().utcoffset()
     if off is None:
         return "", ""
@@ -383,30 +404,30 @@ def zone_fields(utc: datetime):
 
 
 def fix_quality(s: State, args):
-    """-> (jakosc GGA, status RMC, wskaznik trybu FAA w RMC).
+    """-> (GGA quality, RMC status, FAA mode indicator in RMC).
 
-    Tylko fix satelitarny jest fixem nawigacyjnym. Pozycja z WiFi, sieci
-    komorkowej, adresu IP, lokalizacji domyslnej Windows albo celowo zgrubiona
-    (OBFUSCATED) ma dokladnosc od kilkuset metrow do kilkudziesieciu kilometrow
-    i nie nadaje sie do nawigacji, wiec jest oznaczana jako nieprawidlowa:
-    GGA 0 + RMC V + tryb N. Odbiorca sam zdecyduje, czy ja pokazac.
+    Only a satellite fix is a navigational fix. A position from WiFi, the
+    cellular network, an IP address, the Windows default location or one
+    deliberately coarsened (OBFUSCATED) is accurate to between hundreds of
+    metres and tens of kilometres and is unfit for navigation, so it is flagged
+    invalid: GGA 0 + RMC V + mode N. The consumer decides whether to show it.
     """
     if args.simulate:
-        # Swiadome klamstwo na zyczenie: dane symulowane podaja sie za fix GPS,
-        # bo czesc ploterow ignoruje wszystko oznaczone jako symulator.
+        # A deliberate lie on request: simulated data passes itself off as a GPS
+        # fix, because some plotters ignore anything flagged as a simulator.
         if args.sim_as_real:
             return "1", "A", "A"
-        return "8", "A", "S"   # 8 / S = tryb symulacji (NMEA)
+        return "8", "A", "S"   # 8 / S = simulation mode (NMEA)
     if s.pos_source == "SATELLITE":
-        return "1", "A", "A"   # 1 / A = fix GPS, autonomiczny
-    return "0", "V", "N"       # 0 / V / N = brak prawidlowego fixa
+        return "1", "A", "A"   # 1 / A = GPS fix, autonomous
+    return "0", "V", "N"       # 0 / V / N = no valid fix
 
 
 def build_sentences(s: State, args, emit_pos: bool = True) -> list:
     out = []
     mono = time.monotonic()
 
-    # Czas fixa z odbiornika; zegar PC tylko jako awaryjny fallback.
+    # Fix time from the receiver; the PC clock only as a last-resort fallback.
     fix = s.pos_utc if s.pos_utc is not None else datetime.now(timezone.utc)
     t = fix.strftime("%H%M%S.") + f"{fix.microsecond // 10000:02d}"
     d = fix.strftime("%d%m%y")
@@ -420,15 +441,15 @@ def build_sentences(s: State, args, emit_pos: bool = True) -> list:
         la, lah = lat_field(s.lat)
         lo, loh = lon_field(s.lon)
         alt = f"{s.alt:.1f}" if s.alt is not None else ""
-        # HDOP tylko z odbiornika; Windows nie podaje liczby satelitow, wiec to
-        # pole zostaje puste zamiast zmyslonej wartosci.
+        # HDOP from the receiver only; Windows does not report the satellite
+        # count, so that field stays empty rather than carrying a made-up value.
         hdop = f"{s.hdop:.1f}" if s.hdop is not None else ""
         out.append(nmea(f"GPGGA,{t},{la},{lah},{lo},{loh},{qual},,{hdop},{alt},M,,M,,"))
         out.append(nmea(f"GPRMC,{t},{status},{la},{lah},{lo},{loh},"
                         f"{sog_kn},{cog_t},{d},,,{mode}"))
 
-    # VTG: kurs i predkosc nad dnem. Wiele ploterow bierze COG/SOG wlasnie
-    # stad, a nie z RMC. Kurs magnetyczny zostaje pusty - znamy tylko rzeczywisty.
+    # VTG: course and speed over ground. Many plotters take COG/SOG from here
+    # rather than from RMC. Magnetic course stays empty - only true is known.
     if "vtg" in args.sentences and pos_ok and s.cog is not None:
         kmh = f"{s.sog * 3.6:.1f}" if s.sog is not None else ""
         out.append(nmea(f"GPVTG,{cog_t},T,,M,{sog_kn},N,{kmh},K,{mode}"))
@@ -463,11 +484,11 @@ def build_sentences(s: State, args, emit_pos: bool = True) -> list:
 # Sensor sources
 # --------------------------------------------------------------------------- #
 def import_winrt():
-    """Zwraca klasy WinRT z winrt-* albo ze starszego monolitu winsdk.
+    """Returns the WinRT classes from winrt-* or from the older winsdk bundle.
 
-    Brak obu to Fatal: bez bibliotek czujnikow nie da sie nic odczytac, a
-    ponawianie importu niczego nie zmieni. Tryby --simulate i --gpx tu nie
-    zagladaja, wiec dzialaja bez tych pakietow.
+    Having neither is Fatal: without the sensor libraries nothing can be read,
+    and retrying the import will not change that. The --simulate and --gpx
+    modes never come here, so they work without these packages.
     """
     try:
         from winrt.windows.devices.sensors import Compass, Inclinometer
@@ -480,27 +501,28 @@ def import_winrt():
                 Geolocator, PositionAccuracy, GeolocationAccessStatus, PositionStatus)
         except ImportError as e:
             raise Fatal(
-                "brak bibliotek WinRT: " + str(e) + "\n"
-                "       zainstaluj: pip install winrt-runtime "
+                "WinRT libraries are missing: " + str(e) + "\n"
+                "       install them with: pip install winrt-runtime "
                 "winrt-Windows.Devices.Sensors winrt-Windows.Devices.Geolocation "
                 "winrt-Windows.Foundation\n"
-                "       albo uruchom bez czujnikow: --simulate / --gpx PLIK"
+                "       or run without sensors: --simulate / --gpx FILE"
             ) from e
     return (Compass, Inclinometer, Geolocator, PositionAccuracy,
             GeolocationAccessStatus, PositionStatus)
 
 
-SENSOR_RETRY_S = 15.0     # jak czesto probowac odzyskac brakujacy czujnik
-MAX_READ_ERRORS = 10      # po tylu bledach z rzedu czujnik jest zwalniany
+SENSOR_RETRY_S = 15.0     # how often to try re-acquiring a missing sensor
+MAX_READ_ERRORS = 10      # release a sensor after this many errors in a row
 
 
 async def sensor_task(state: State, args, log):
-    """Czyta czujniki Windows. Odporny na brak i utrate sprzetu w trakcie.
+    """Reads the Windows sensors. Tolerates missing and vanishing hardware.
 
-    Czujnik nieobecny przy starcie nie jest porazka - jest ponawiany co
-    SENSOR_RETRY_S, bo USB GPS albo kompas moga pojawic sie pozniej. Czujnik,
-    ktory zaczyna sypac bledami, jest zwalniany po MAX_READ_ERRORS i pozyskiwany
-    od nowa; samo logowanie jest ograniczane, zeby awaria nie zalala dziennika.
+    A sensor absent at startup is not a failure - it is retried every
+    SENSOR_RETRY_S, because a USB GPS or a compass may appear later. A sensor
+    that starts throwing errors is released after MAX_READ_ERRORS and acquired
+    again from scratch; the logging itself is rate-limited so that a failure
+    cannot flood the log.
     """
     (Compass, Inclinometer, Geolocator, PositionAccuracy,
      GeolocationAccessStatus, PositionStatus) = import_winrt()
@@ -508,13 +530,13 @@ async def sensor_task(state: State, args, log):
 
     want_hdg = "hdg" in args.sentences
     want_att = "att" in args.sentences
-    # zda i vtg tez potrzebuja pozycji - bez tego --sentences zda nie dzialalo
+    # zda and vtg need a position too - without this, --sentences zda was dead
     want_gps = bool({"gps", "zda", "vtg"} & args.sentences)
 
     said = set()
 
     def once(key, msg, level="INFO"):
-        """Loguje raz na stan, zeby brak czujnika nie powtarzal sie co 15 s."""
+        """Logs once per state, so a missing sensor does not repeat every 15 s."""
         if key not in said:
             said.add(key)
             log(msg, level)
@@ -524,7 +546,7 @@ async def sensor_task(state: State, args, log):
             dev.report_interval = max(dev.minimum_report_interval,
                                       int(1000 / args.rate))
         except Exception as e:
-            log(f"{label}: nie ustawiono report_interval: {e}", "WARN")
+            log(f"{label}: could not set report_interval: {e}", "WARN")
 
     def acquire(kind):
         cls, label = ((Compass, "Compass") if kind == "compass"
@@ -532,11 +554,11 @@ async def sensor_task(state: State, args, log):
         try:
             dev = cls.get_default()
         except Exception as e:
-            once(f"{kind}_exc", f"{label}: blad pozyskania: {e}", "ERROR")
+            once(f"{kind}_exc", f"{label}: acquisition failed: {e}", "ERROR")
             return None
         if dev is None:
             once(f"{kind}_none",
-                 f"{label}: brak czujnika; ponawiam co {SENSOR_RETRY_S:.0f}s", "WARN")
+                 f"{label}: no sensor; retrying every {SENSOR_RETRY_S:.0f}s", "WARN")
             return None
         said.discard(f"{kind}_none")
         said.discard(f"{kind}_exc")
@@ -561,17 +583,17 @@ async def sensor_task(state: State, args, log):
 
     def apply_pos(data):
         if isinstance(data, Exception):
-            log(f"Geolocator: blad odczytu pozycji: {data}", "WARN")
+            log(f"Geolocator: failed to read position: {data}", "WARN")
             return
         ts = data["ts"]
         if ts is not None and ts.tzinfo is None:
             ts = ts.replace(tzinfo=timezone.utc)
         if data["src"] != state.pos_source:
-            nav = ("fix nawigacyjny" if data["src"] == "SATELLITE"
-                   else "NIE nadaje sie do nawigacji -> GGA 0 / RMC V")
-            log(f"Geolocator: zrodlo pozycji = {data['src']} ({nav})",
+            nav = ("navigational fix" if data["src"] == "SATELLITE"
+                   else "NOT fit for navigation -> GGA 0 / RMC V")
+            log(f"Geolocator: position source = {data['src']} ({nav})",
                 "INFO" if data["src"] == "SATELLITE" else "WARN")
-        # num() na wszystkim: NaN z WinRT nie moze dotrzec do State
+        # num() on everything: NaN from WinRT must not reach State
         state.lat, state.lon = num(data["lat"]), num(data["lon"])
         state.alt = num(data["alt"])
         state.sog, state.cog = num(data["sog"]), num(data["cog"])
@@ -595,11 +617,11 @@ async def sensor_task(state: State, args, log):
         state.gps_status = s
         hint = {
             "READY": "",
-            "INITIALIZING": "odbiornik sie uruchamia",
-            "NO_DATA": "brak danych z odbiornika",
-            "DISABLED": "lokalizacja wylaczona w ustawieniach Windows",
-            "NOT_AVAILABLE": "brak sprzetu lokalizacji",
-            "NOT_INITIALIZED": "jeszcze nie zainicjowany",
+            "INITIALIZING": "receiver is starting up",
+            "NO_DATA": "no data from the receiver",
+            "DISABLED": "location is switched off in Windows settings",
+            "NOT_AVAILABLE": "no location hardware",
+            "NOT_INITIALIZED": "not initialised yet",
         }.get(s, "")
         log(f"Geolocator: status = {s}" + (f" ({hint})" if hint else ""),
             "INFO" if s in ("READY", "INITIALIZING") else "WARN")
@@ -608,12 +630,12 @@ async def sensor_task(state: State, args, log):
         try:
             status = await Geolocator.request_access_async()
         except Exception as e:
-            once("geo_access", f"Geolocator: blad request_access: {e}", "ERROR")
+            once("geo_access", f"Geolocator: request_access failed: {e}", "ERROR")
             return None
         if status != GeolocationAccessStatus.ALLOWED:
             once("geo_denied",
-                 f"Geolocator: brak dostepu ({status}). Ustawienia > Prywatnosc > "
-                 "Lokalizacja: wlacz lokalizacje i dostep dla aplikacji klasycznych.",
+                 f"Geolocator: access denied ({status}). Settings > Privacy & "
+                 "security > Location: enable location and desktop app access.",
                  "ERROR")
             return None
         try:
@@ -625,7 +647,7 @@ async def sensor_task(state: State, args, log):
             g.add_position_changed(on_pos)
             g.add_status_changed(on_status)
         except Exception as e:
-            once("geo_init", f"Geolocator: blad inicjalizacji: {e}", "ERROR")
+            once("geo_init", f"Geolocator: initialisation failed: {e}", "ERROR")
             return None
         for k in ("geo_denied", "geo_access", "geo_init"):
             said.discard(k)
@@ -636,18 +658,19 @@ async def sensor_task(state: State, args, log):
     incl = acquire("incl") if want_att else None
     geo = await acquire_geo() if want_gps else None
     if not (want_hdg or want_att or want_gps):
-        raise Fatal("--sentences nie wybiera zadnych danych z czujnikow")
+        raise Fatal("--sentences selects no sensor data at all")
 
     errors = {"compass": 0, "incl": 0}
 
     def read_error(kind, label, e):
-        """Loguje z ograniczeniem i mowi, czy zwolnic czujnik."""
+        """Logs with rate limiting and says whether to release the sensor."""
         errors[kind] += 1
         n = errors[kind]
         if n == 1 or n == MAX_READ_ERRORS or n % 100 == 0:
-            log(f"{label}: blad odczytu (x{n}): {e}", "WARN")
+            log(f"{label}: read error (x{n}): {e}", "WARN")
         if n >= MAX_READ_ERRORS:
-            log(f"{label}: {n} bledow z rzedu, zwalniam i pozyskam ponownie", "ERROR")
+            log(f"{label}: {n} errors in a row, releasing and re-acquiring",
+                "ERROR")
             errors[kind] = 0
             return True
         return False
@@ -666,7 +689,7 @@ async def sensor_task(state: State, args, log):
                         state.hdg_acc = int(r.heading_accuracy)
                     except Exception:
                         state.hdg_acc = None
-                    # Bez sensownego kursu magnetycznego nie ma czego stemplowac
+                    # Nothing to stamp without a usable magnetic heading
                     if state.hdg_mag is not None:
                         state.hdg_time = time.monotonic()
                 errors["compass"] = 0
@@ -700,7 +723,7 @@ async def sensor_task(state: State, args, log):
 
 
 # --------------------------------------------------------------------------- #
-# Odtwarzanie trasy z GPX
+# GPX track playback
 # --------------------------------------------------------------------------- #
 EARTH_R = 6371000.0
 
@@ -722,12 +745,12 @@ def bearing(lat1, lon1, lat2, lon2) -> float:
 
 
 def parse_gpx(path, log):
-    """GPX -> (rodzaj punktow, [(czas|None, lat, lon, alt|None)]).
+    """GPX -> (kind of points, [(time|None, lat, lon, alt|None)]).
 
-    Dziala bez wzgledu na namespace. Preferuje trkpt, potem rtept, potem wpt.
-    <ele> przechodzi tylko gdy jest fizycznie sensowne: eksporty Garmina wpisuja
-    tam 1e25 jako znacznik "brak danych", co bez filtra dalo by wysokosc
-    1e25 m w GPGGA.
+    Namespace agnostic. Prefers trkpt, then rtept, then wpt. An <ele> value is
+    accepted only when physically plausible: Garmin exports write 1e25 there as
+    a "no data" marker, which without the filter would yield an altitude of
+    1e25 m in GPGGA.
     """
     import xml.etree.ElementTree as ET
 
@@ -737,13 +760,13 @@ def parse_gpx(path, log):
     try:
         root = ET.parse(path).getroot()
     except FileNotFoundError:
-        raise Fatal(f"GPX: nie ma pliku {path}")
+        raise Fatal(f"GPX: no such file: {path}")
     except PermissionError:
-        raise Fatal(f"GPX: brak uprawnien do {path}")
+        raise Fatal(f"GPX: permission denied: {path}")
     except ET.ParseError as e:
-        raise Fatal(f"GPX: plik {path} nie jest poprawnym XML: {e}")
+        raise Fatal(f"GPX: {path} is not well-formed XML: {e}")
     except OSError as e:
-        raise Fatal(f"GPX: nie moge odczytac {path}: {e}")
+        raise Fatal(f"GPX: cannot read {path}: {e}")
 
     found = {"trkpt": [], "rtept": [], "wpt": []}
     dropped_ele = 0
@@ -778,52 +801,54 @@ def parse_gpx(path, log):
         if found[kind]:
             break
     else:
-        raise Fatal(f"GPX: nie znalazlem zadnych punktow (trkpt/rtept/wpt) w {path}")
+        raise Fatal(f"GPX: found no points (trkpt/rtept/wpt) in {path}")
 
     pts = found[kind]
     if len(pts) < 2:
-        raise Fatal(f"GPX: potrzebne min. 2 punkty do odtwarzania, jest {len(pts)}")
-    log(f"GPX: {len(pts)} x {kind} z {path}")
+        raise Fatal(f"GPX: playback needs at least 2 points, got {len(pts)}")
+    log(f"GPX: {len(pts)} x {kind} from {path}")
     if dropped_ele:
-        log(f"GPX: odrzucono {dropped_ele} niesensownych <ele> -> wysokosc pusta w GGA")
+        log(f"GPX: rejected {dropped_ele} implausible <ele> values "
+            "-> altitude left empty in GGA")
     return kind, pts
 
 
 def gpx_timeline(pts, knots, log):
-    """[(czas,lat,lon,alt)] -> ([(t_rel_s, lat, lon, alt)], opis tempa).
+    """[(time,lat,lon,alt)] -> ([(t_rel_s, lat, lon, alt)], pace description).
 
-    Znaczniki <time> sluza tylko jako ODSTEPY. Pliki z gpx.studio maja daty
-    1970-01-01, wiec jako czas absolutny sa bezuzyteczne - zdania dostaja
-    biezacy czas UTC. Gdy <time> nie ma wcale, tempo bierze sie z --gpx-knots.
+    The <time> stamps serve ONLY as INTERVALS. Files from gpx.studio carry dates
+    of 1970-01-01, so as absolute times they are useless - sentences get the
+    current UTC time instead. When <time> is absent entirely, the pace comes
+    from --gpx-knots.
     """
     stamps = [p[0] for p in pts]
     if all(s is not None for s in stamps):
         base = stamps[0]
         rel = [(s - base).total_seconds() for s in stamps]
-        for i in range(1, len(rel)):       # wymus niemalejacosc
+        for i in range(1, len(rel)):       # force non-decreasing
             if rel[i] < rel[i - 1]:
                 rel[i] = rel[i - 1]
         years = sorted({s.year for s in stamps})
-        mode = f"odstepy z <time> (daty w pliku: {years} - ignorowane)"
+        mode = f"intervals from <time> (dates in file: {years} - ignored)"
     else:
         v = max(0.05, knots / KNOT_PER_MPS)
         rel = [0.0]
         for i in range(1, len(pts)):
             d = haversine(pts[i - 1][1], pts[i - 1][2], pts[i][1], pts[i][2])
             rel.append(rel[-1] + d / v)
-        mode = f"brak <time> w pliku -> stale {knots:g} kn"
+        mode = f"no <time> in file -> constant {knots:g} kn"
     return [(rel[i], pts[i][1], pts[i][2], pts[i][3]) for i in range(len(pts))], mode
 
 
 def gpx_sample(tl, el, i, last_cog, last_sog):
-    """Stan trasy w chwili el (sekundy od startu trasy).
+    """Track state at elapsed time el (seconds from the start of the track).
 
-    Czysta funkcja, zeby dala sie przetestowac bez zegara i gniazd. Indeks i
-    ostatnie SOG/COG wchodza i wychodza, bo przenoszenie ich przez odcinki
-    zerowej dlugosci/zerowego czasu jest czescia definicji.
-    Zwraca (i, lat, lon, alt, sog_mps, cog_deg).
+    A pure function, so it can be tested without a clock or sockets. The index
+    and the last SOG/COG go in and come back out, because carrying them across
+    legs of zero length or zero duration is part of the definition.
+    Returns (i, lat, lon, alt, sog_mps, cog_deg).
     """
-    # Indeks posuwa sie w obie strony - tanio, bo czas jest monotoniczny.
+    # The index moves both ways - cheap, because time is monotonic.
     while i < len(tl) - 2 and tl[i + 1][0] <= el:
         i += 1
     while i > 0 and tl[i][0] > el:
@@ -832,15 +857,15 @@ def gpx_sample(tl, el, i, last_cog, last_sog):
     ta, la1, lo1, a1 = tl[i]
     tb, la2, lo2, a2 = tl[i + 1]
     span = tb - ta
-    # span == 0 zdarza sie czesto: w tej trasie 206 punktow ma czas identyczny
-    # z poprzednim. Bez tego byloby dzielenie przez zero.
+    # span == 0 is common: in the reference track 206 points share a timestamp
+    # with their predecessor. Without this guard it would be division by zero.
     f = 0.0 if span <= 0.0 else min(1.0, max(0.0, (el - ta) / span))
 
     seg = haversine(la1, lo1, la2, lo2)
-    if seg > 0.1:                      # zerowe segmenty nie zmieniaja kursu
+    if seg > 0.1:                      # zero-length legs must not change course
         last_cog = bearing(la1, lo1, la2, lo2)
-    # 59 odcinkow tej trasy ma zerowy czas przy niezerowej dlugosci. Bez
-    # przeniesienia ostatniej predkosci SOG spadalby tam do zera mimo ruchu.
+    # 59 legs of the reference track have zero duration but non-zero length.
+    # Without carrying the last speed over, SOG would drop to zero mid-motion.
     if span > 0.0:
         last_sog = seg / span
 
@@ -850,20 +875,20 @@ def gpx_sample(tl, el, i, last_cog, last_sog):
 
 
 def load_gpx(args, log):
-    """Wczytuje i waliduje trase. Wolane PRZED zajeciem portu, zeby zly plik
-    konczyl sie natychmiastowym, czytelnym bledem, a nie awaria po starcie."""
+    """Loads and validates the track. Called BEFORE the port is bound, so that
+    a bad file fails immediately and readably instead of crashing after start."""
     _, pts = parse_gpx(args.gpx, log)
     tl, mode = gpx_timeline(pts, args.gpx_knots, log)
     dur = tl[-1][0]
     if dur <= 0.0:
-        raise Fatal("GPX: zerowy czas trwania trasy, nie ma czego odtwarzac")
+        raise Fatal("GPX: the track has zero duration, nothing to replay")
     dist = sum(haversine(tl[i][1], tl[i][2], tl[i + 1][1], tl[i + 1][2])
                for i in range(len(tl) - 1))
     log(f"GPX: {mode}")
-    log(f"GPX: dlugosc {dist:.0f} m ({dist / 1852.0:.2f} Mm), "
-        f"czas {dur:.0f} s, srednio {dist / dur * KNOT_PER_MPS:.1f} kn")
-    log(f"GPX: mnoznik tempa x{args.gpx_speed:g} -> odtwarzanie "
-        f"~{dur / args.gpx_speed:.0f} s" + (", w petli" if args.gpx_loop else ""))
+    log(f"GPX: length {dist:.0f} m ({dist / 1852.0:.2f} NM), "
+        f"duration {dur:.0f} s, average {dist / dur * KNOT_PER_MPS:.1f} kn")
+    log(f"GPX: pace multiplier x{args.gpx_speed:g} -> playback takes "
+        f"~{dur / args.gpx_speed:.0f} s" + (", looping" if args.gpx_loop else ""))
     return tl, dur
 
 
@@ -882,12 +907,12 @@ async def gpx_task(state: State, args, log, tl, dur):
                 t0 = time.monotonic()
                 i = 0
                 el = 0.0
-                log("GPX: koniec trasy, start od nowa")
+                log("GPX: end of track, starting over")
             else:
                 if not ended:
                     ended = True
-                    log(f"GPX: koniec trasy; po {args.stale:g} s bez odswiezenia "
-                        "zdania przestana byc wysylane")
+                    log(f"GPX: end of track; after {args.stale:g} s without a "
+                        "refresh, sentences will stop being sent")
                 await asyncio.sleep(period)
                 continue
 
@@ -904,14 +929,14 @@ async def gpx_task(state: State, args, log, tl, dur):
         state.pos_time = time.monotonic()
         state.pos_seq += 1
         if "hdg" in args.sentences:
-            state.hdg_mag = last_cog    # kompas zgodny z kursem nad dnem
+            state.hdg_mag = last_cog    # compass aligned with course over ground
             state.hdg_true = None
             state.hdg_time = time.monotonic()
         await asyncio.sleep(period)
 
 
 async def simulate_task(state: State, args, log):
-    log("SIMULATE: dane syntetyczne, bez czujnikow")
+    log("SIMULATE: synthetic data, no sensors")
     t0 = time.monotonic()
     while True:
         t = time.monotonic() - t0
@@ -942,43 +967,43 @@ class Server:
         self.args = args
         self.log = log
         self.clients = set()
-        self.sent = 0          # licznik zdan, do heartbeatu
+        self.sent = 0          # sentence counter, for the heartbeat
         self.build_errors = 0
 
     async def handle(self, reader, writer):
         peer = writer.get_extra_info("peername")
         self.clients.add(writer)
-        self.log(f"TCP: polaczono {peer} (klientow: {len(self.clients)})")
+        self.log(f"TCP: connected {peer} (clients: {len(self.clients)})")
         try:
-            # Klienci NMEA zwykle tylko czytaja; czekamy na rozlaczenie.
+            # NMEA clients usually only read; wait for the disconnect.
             while await reader.read(1024):
                 pass
         except Exception as e:
-            self.log(f"TCP: {peer} przerwane: {type(e).__name__}: {e}", "WARN")
+            self.log(f"TCP: {peer} broke off: {type(e).__name__}: {e}", "WARN")
         finally:
             self.clients.discard(writer)
             try:
                 writer.close()
             except Exception:
                 pass
-            self.log(f"TCP: rozlaczono {peer} (klientow: {len(self.clients)})")
+            self.log(f"TCP: disconnected {peer} (clients: {len(self.clients)})")
 
     async def broadcast_loop(self, state: State):
         period = 1.0 / self.args.rate
         last_seq = -1
         while True:
-            # Bez --gps-repeat zdania pozycyjne ida tylko przy nowym fixie, zeby
-            # nie rozsylac tego samego pomiaru pod kilkoma zmyslonymi czasami.
+            # Without --gps-repeat, position sentences go out only on a new fix,
+            # so the same measurement is not broadcast under invented times.
             emit_pos = self.args.gps_repeat or state.pos_seq != last_seq
             last_seq = state.pos_seq
-            # Blad budowania zdania nie moze zatrzymac rozsylania: logujemy
-            # pierwszy i co setny, a petla idzie dalej.
+            # A sentence-building error must not stop the broadcast: log the
+            # first and every hundredth, and keep the loop going.
             try:
                 sentences = build_sentences(state, self.args, emit_pos)
             except Exception:
                 self.build_errors += 1
                 if self.build_errors == 1 or self.build_errors % 100 == 0:
-                    self.log(f"build_sentences: blad (x{self.build_errors})",
+                    self.log(f"build_sentences: error (x{self.build_errors})",
                              "ERROR", exc=True)
                 sentences = []
             if sentences:
@@ -989,7 +1014,7 @@ class Server:
                         sys.stdout.write("".join(sentences))
                         sys.stdout.flush()
                     except OSError:
-                        pass   # zamkniety potok nie moze zabic rozsylania
+                        pass   # a closed pipe must not kill the broadcast
                 for w in list(self.clients):
                     try:
                         w.write(payload)
@@ -1003,78 +1028,92 @@ class Server:
             await asyncio.sleep(period)
 
     async def status_loop(self, state: State):
-        """Okresowy wiersz stanu - zeby po godzinach bylo widac, ze zyje."""
+        """Periodic status line - so that after hours it is clear it is alive."""
         every = self.args.status_interval
         last = 0
         while True:
             await asyncio.sleep(every)
             age = time.monotonic() - state.pos_time if state.pos_time else None
-            pos = ("brak" if age is None
-                   else f"{age:.0f}s temu" if age < 86400 else "brak")
+            pos = ("none" if age is None
+                   else f"{age:.0f}s ago" if age < 86400 else "none")
             self.log(
-                f"status: klientow={len(self.clients)} zdan={self.sent} "
-                f"(+{self.sent - last}) pozycja={pos} "
-                f"zrodlo={state.pos_source or '-'} gps={state.gps_status or '-'}"
+                f"status: clients={len(self.clients)} sentences={self.sent} "
+                f"(+{self.sent - last}) position={pos} "
+                f"source={state.pos_source or '-'} gps={state.gps_status or '-'}"
             )
             last = self.sent
 
 
 # --------------------------------------------------------------------------- #
 def parse_args():
-    p = argparse.ArgumentParser(description="Windows Sensors API -> NMEA 0183 over TCP")
-    p.add_argument("--host", default="0.0.0.0", help="adres nasluchu (domyslnie 0.0.0.0)")
-    p.add_argument("--port", type=int, default=10110, help="port TCP (domyslnie 10110)")
-    p.add_argument("--rate", type=float, default=5.0, help="czestotliwosc wysylania, Hz (domyslnie 5)")
+    p = argparse.ArgumentParser(
+        description="Windows Sensors API -> NMEA 0183 over TCP")
+    p.add_argument("--host", default="0.0.0.0",
+                   help="listen address (default 0.0.0.0, every interface)")
+    p.add_argument("--port", type=int, default=10110,
+                   help="TCP port (default 10110, the IANA port for NMEA 0183)")
+    p.add_argument("--rate", type=float, default=5.0,
+                   help="broadcast frequency in Hz (default 5)")
     p.add_argument("--sentences", default="gps,zda,vtg,hdg,att",
-                   help="lista: gps,zda,vtg,hdg,att (domyslnie wszystkie)")
+                   help="comma-separated list: gps,zda,vtg,hdg,att (default all)")
     p.add_argument("--sim-as-real", action="store_true",
-                   help="w trybie symulacji/GPX podawaj dane jako zwykly fix GPS "
-                        "(GGA 1, tryb A) zamiast oznaczac je jako symulacje (GGA 8, tryb S). "
-                        "Potrzebne, gdy ploter ignoruje dane oznaczone jako symulator")
+                   help="in simulate/GPX mode, present the data as an ordinary "
+                        "GPS fix (GGA 1, mode A) instead of flagging it as "
+                        "simulation (GGA 8, mode S). Needed when the plotter "
+                        "ignores data flagged as simulator output")
     p.add_argument("--gps-repeat", action="store_true",
-                   help="powtarzaj ostatni fix z czestotliwoscia --rate; domyslnie kazdy "
-                        "fix jest wysylany raz, z wlasnym czasem z odbiornika")
+                   help="repeat the last fix at --rate; by default each fix is "
+                        "sent once, carrying its own time from the receiver")
     p.add_argument("--offset", type=float, default=0.0,
-                   help="korekta kursu w stopniach dodawana do odczytu kompasu (montaz/dewiacja)")
+                   help="heading correction in degrees added to the compass "
+                        "reading (mounting error, deviation)")
     p.add_argument("--variation", type=float, default=None,
-                   help="deklinacja magnetyczna w stopniach (E dodatnia), uzyta gdy Windows nie podaje kursu rzeczywistego")
+                   help="magnetic variation in degrees (east positive), used "
+                        "only when Windows does not supply a true heading")
     p.add_argument("--stale", type=float, default=5.0,
-                   help="po ilu sekundach bez odczytu przestac wysylac dane (domyslnie 5)")
-    p.add_argument("--simulate", action="store_true", help="dane testowe zamiast czujnikow")
-    p.add_argument("--gpx", metavar="PLIK",
-                   help="odtwarzaj trase z pliku GPX (track lub route) zamiast czujnikow; "
-                        "wlacza tryb symulacji")
+                   help="stop sending data after this many seconds without a "
+                        "fresh reading (default 5)")
+    p.add_argument("--simulate", action="store_true",
+                   help="synthetic test data instead of the sensors")
+    p.add_argument("--gpx", metavar="FILE",
+                   help="replay a track or route from a GPX file instead of "
+                        "reading the sensors; implies simulation mode")
     p.add_argument("--gpx-speed", type=float, default=1.0, metavar="X",
-                   help="mnoznik tempa odtwarzania: 1 = czas rzeczywisty, 10 = 10x szybciej")
+                   help="playback pace multiplier: 1 = real time, 10 = ten "
+                        "times faster")
     p.add_argument("--gpx-knots", type=float, default=5.0, metavar="KN",
-                   help="predkosc uzywana tylko gdy GPX nie ma znacznikow <time> (domyslnie 5)")
+                   help="speed used only when the GPX has no <time> stamps "
+                        "(default 5)")
     p.add_argument("--gpx-loop", action="store_true",
-                   help="po dojsciu do konca trasy zacznij od nowa")
+                   help="start over from the beginning at the end of the track")
     p.add_argument("--status-interval", type=float, default=60.0, metavar="S",
-                   help="co ile sekund logowac wiersz stanu; 0 wylacza (domyslnie 60)")
-    p.add_argument("--log-file", metavar="PLIK",
-                   help="dopisuj diagnostyke takze do pliku (stderr zostaje)")
-    p.add_argument("-v", "--verbose", action="store_true", help="drukuj zdania na stdout")
-    p.add_argument("--version", action="version", version=f"sensors2nmea {__version__}")
+                   help="seconds between status log lines; 0 disables "
+                        "(default 60)")
+    p.add_argument("--log-file", metavar="FILE",
+                   help="append diagnostics to a file as well as stderr")
+    p.add_argument("-v", "--verbose", action="store_true",
+                   help="also print sentences to stdout")
+    p.add_argument("--version", action="version",
+                   version=f"sensors2nmea {__version__}")
     a = p.parse_args()
     a.sentences = {x.strip().lower() for x in a.sentences.split(",") if x.strip()}
     known = {"gps", "zda", "vtg", "hdg", "att"}
     bad = a.sentences - known
     if bad:
-        p.error(f"--sentences: nieznane grupy {sorted(bad)}; dostepne: "
+        p.error(f"--sentences: unknown groups {sorted(bad)}; available: "
                 f"{','.join(sorted(known))}")
     if not a.sentences:
-        p.error("--sentences nie moze byc puste")
+        p.error("--sentences must not be empty")
     if a.gpx_speed <= 0:
-        p.error("--gpx-speed musi byc > 0")
+        p.error("--gpx-speed must be > 0")
     if a.rate <= 0:
-        p.error("--rate musi byc > 0")
+        p.error("--rate must be > 0")
     if a.stale <= 0:
-        p.error("--stale musi byc > 0")
+        p.error("--stale must be > 0")
     if not 1 <= a.port <= 65535:
-        p.error("--port musi byc w zakresie 1-65535")
-    # Odtworzona trasa to dane symulowane, wiec musi byc tak oznaczona w NMEA
-    # (GGA 8 / RMC tryb S), a nie udawac fixa satelitarnego.
+        p.error("--port must be in the range 1-65535")
+    # A replayed track is simulated data, so it has to be flagged as such in
+    # NMEA (GGA 8 / RMC mode S) rather than pose as a satellite fix.
     if a.gpx:
         a.simulate = True
     return a
@@ -1084,12 +1123,12 @@ async def main():
     args = parse_args()
 
     log = make_log(args.log_file)
-    log(f"sensors2nmea {__version__} startuje (Python {sys.version.split()[0]})")
+    log(f"sensors2nmea {__version__} starting (Python {sys.version.split()[0]})")
 
     state = State()
 
-    # Zrodlo danych wybierane raz; walidacja GPX PRZED zajeciem portu, zeby zly
-    # plik nie zostawil po sobie nasluchujacego gniazda.
+    # The data source is chosen once; the GPX file is validated BEFORE the port
+    # is bound, so a bad file never leaves a listening socket behind.
     if args.gpx:
         tl, dur = load_gpx(args, log)
 
@@ -1106,26 +1145,26 @@ async def main():
     try:
         srv = await asyncio.start_server(server.handle, args.host, args.port)
     except OSError as e:
-        # WSAEADDRINUSE trafia w errno (asyncio owija blad), nie w winerror;
-        # 48/98 to odpowiedniki na BSD/Linux.
+        # WSAEADDRINUSE lands in errno (asyncio wraps the error), not winerror;
+        # 48/98 are the BSD/Linux equivalents.
         hint = ""
         in_use = {10048, 48, 98}
         if e.errno in in_use or getattr(e, "winerror", None) in in_use:
-            hint = (f"\n       port {args.port} jest zajety. Sprawdz czym:"
-                    f"\n         Get-NetTCPConnection -LocalPort {args.port}"
-                    f"\n       i podaj inny przez --port")
-        raise Fatal(f"nie moge nasluchiwac na {args.host}:{args.port}: {e}{hint}")
+            hint = (f"\n       port {args.port} is already in use. Find out by "
+                    f"what with:\n         Get-NetTCPConnection -LocalPort "
+                    f"{args.port}\n       then pick another one with --port")
+        raise Fatal(f"cannot listen on {args.host}:{args.port}: {e}{hint}")
 
-    log(f"TCP: nasluch na {args.host}:{args.port}, {args.rate:g} Hz, "
-        f"zdania: {','.join(sorted(args.sentences))}")
+    log(f"TCP: listening on {args.host}:{args.port}, {args.rate:g} Hz, "
+        f"sentences: {','.join(sorted(args.sentences))}")
     if args.host == "0.0.0.0":
-        log("TCP: 0.0.0.0 wystawia serwer na wszystkie interfejsy; w niezaufanej "
-            "sieci uzyj --host 127.0.0.1", "WARN")
+        log("TCP: 0.0.0.0 exposes the server on every interface; on an "
+            "untrusted network use --host 127.0.0.1", "WARN")
 
     tasks = [
         srv.serve_forever(),
-        supervise("zrodlo danych", make_source, log),
-        supervise("rozsylanie", lambda: server.broadcast_loop(state), log),
+        supervise("data source", make_source, log),
+        supervise("broadcast", lambda: server.broadcast_loop(state), log),
     ]
     if args.status_interval > 0:
         tasks.append(supervise("status", lambda: server.status_loop(state), log))
@@ -1135,17 +1174,17 @@ async def main():
 
 
 def cli():
-    """Punkt wejscia konsolowy (patrz pyproject.toml). Zwraca kod wyjscia."""
+    """Console entry point (see pyproject.toml). Returns the exit code."""
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nprzerwane przez uzytkownika", file=sys.stderr)
+        print("\ninterrupted by user", file=sys.stderr)
         return 130
     except Fatal as e:
-        print(f"BLAD: {e}", file=sys.stderr)
+        print(f"ERROR: {e}", file=sys.stderr)
         return 1
     except Exception:
-        print("BLAD nieobsluzony:\n" + traceback.format_exc(), file=sys.stderr)
+        print("UNHANDLED ERROR:\n" + traceback.format_exc(), file=sys.stderr)
         return 1
     return 0
 

@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+# >=77 for PEP 639 (SPDX license expression + license-files)
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +9,10 @@ version = "1.0.0"
 description = "Windows Sensors API (GNSS, compass, inclinometer) to NMEA 0183 over TCP, with GPX track playback"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+# NOTICE ships with every distribution: Apache-2.0 section 4(d) requires
+# redistributors to reproduce it, so it must not be left out of the package.
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Piotr Bomba", email = "bombapiotr@gmail.com" }]
 keywords = [
     "nmea", "nmea0183", "gnss", "gps", "marine", "navigation",
@@ -18,7 +22,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",

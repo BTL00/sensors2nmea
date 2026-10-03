@@ -88,26 +88,32 @@ need this tool for that.
 
 ## Installation
 
-### From PyPI-style install (recommended)
+### From PyPI (recommended)
 
 ```powershell
-# clone, then install with the Windows sensor extras
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install "sensors2nmea[sensors]"
+```
+
+This installs a `sensors2nmea` command on your PATH. The `[sensors]` extra
+pulls in the WinRT bindings needed to read the real hardware.
+
+If you only want simulation or GPX playback, drop the extra — the core has **no
+dependencies at all** and runs on Linux and macOS too:
+
+```powershell
+pip install sensors2nmea
+```
+
+### From source
+
+```powershell
 git clone https://github.com/BTL00/sensors2nmea.git
 cd sensors2nmea
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[sensors]"
-```
-
-This installs a `sensors2nmea` command on your PATH.
-
-### Without the sensor libraries
-
-If you only want simulation or GPX playback, skip the extras — there are no
-dependencies at all:
-
-```powershell
-pip install -e .
 ```
 
 ### Manual, no packaging
@@ -470,6 +476,3 @@ Issues and pull requests are welcome. Useful contributions in particular:
 - reports from hardware that actually has a compass or inclinometer
 - `GPGSA` and `GPGST` support built on the DOP values already available
 - testing against plotters other than OpenCPN
-
-Note that in-source comments and log messages are in Polish; the README and
-public documentation are in English.
