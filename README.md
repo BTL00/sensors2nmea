@@ -14,16 +14,14 @@ It can also **replay a recorded GPX track** instead of reading the sensors,
 which is useful for testing a plotter setup at your desk.
 
 ```
-+----------------------+
-| Windows Sensors API  |      +--------------+      +------------------+
-|  Geolocator (GNSS)   |      |              |      | OpenCPN          |
-|  Compass             | ---> | sensors2nmea | ---> | Navionics        |
-|  Inclinometer        |      |  TCP :10110  |      | qtVlm            |
-+----------------------+      |              |      | ...many clients  |
-                              +--------------+      +------------------+
-+----------------------+             ^
-|  GPX track file      | ------------+
-+----------------------+
++----------------------+      +--------------+      +------------------+
+| Windows Sensors API  |      |              |      | OpenCPN          |
+|  Geolocator (GNSS)   | ---> | sensors2nmea | ---> | Navionics        |
+|  Compass             |      |  TCP :10110  |      | qtVlm            |
+|  Inclinometer        |      |              |      | ...many clients  |
++----------------------+      +--------------+      +------------------+
+
+A recorded GPX track can replace the sensors entirely: --gpx FILE
 ```
 
 > **This is not a certified navigation device.** See [Disclaimer](#disclaimer)
