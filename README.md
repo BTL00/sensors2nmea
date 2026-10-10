@@ -61,7 +61,9 @@ A recorded GPX track can replace the sensors entirely: --gpx FILE
 - **GPX playback** of tracks or routes, with speed multiplier and looping
 - **Honest fix quality**: a WiFi- or IP-derived position is flagged invalid
   instead of masquerading as a satellite fix
-- **Multi-client TCP server** - plotter, logger and a debug `telnet` at once
+- **Multi-client, multi-port TCP server** - plotter, logger and a debug
+  `telnet` at once, and with `--port 10110,10111` two plotters that each want
+  their own port (OpenCPN and AvNav, say) read the same stream side by side
 - **Self-healing**: every task is supervised and restarted with backoff; sensors
   that disappear are re-acquired automatically
 - **No dependencies** for `--simulate` and `--gpx` modes - those run on plain
@@ -153,6 +155,10 @@ sensors2nmea --port 15555 -v
 # bind to localhost only
 sensors2nmea --host 127.0.0.1 --port 10110
 
+# listen on two ports at once - the same stream goes to both, so OpenCPN
+# and AvNav can each use the port they are configured for
+sensors2nmea --port 10110,10111
+
 # synthetic data, no sensors needed
 sensors2nmea --simulate
 
@@ -207,7 +213,7 @@ the operating system. Pick the one you actually want.
 | Option | Default | Meaning |
 |---|---|---|
 | `--host ADDR` | `0.0.0.0` | Listen address. `0.0.0.0` exposes every interface |
-| `--port N` | `10110` | TCP port. `10110` is the IANA port for NMEA 0183 |
+| `--port N[,N...]` | `10110` | TCP port, or several separated by commas. Every port carries the same stream. `10110` is the IANA port for NMEA 0183 |
 | `--rate HZ` | `5` | Broadcast frequency |
 | `--sentences LIST` | all | Comma-separated: `gps,zda,vtg,hdg,att` |
 | `--gps-repeat` | off | Repeat the last fix at `--rate` instead of once per fix |

@@ -29,6 +29,8 @@ otherwise Geolocator.request_access_async() is denied and no position arrives.
   python sensors2nmea.py                       # port 10110, 0.0.0.0, 5 Hz
   python sensors2nmea.py --port 15555 -v       # other port; -v also echoes
                                                # sentences to stdout
+  python sensors2nmea.py --port 10110,10111    # two ports, one stream: e.g.
+                                               # OpenCPN and AvNav at once
   python sensors2nmea.py --sentences hdg       # compass heading only
   python sensors2nmea.py --simulate            # synthetic data, no sensors
   python sensors2nmea.py --gpx track.gpx --sim-as-real
@@ -188,7 +190,9 @@ Three concurrent asyncio tasks over a shared State object:
 
   data source     sensor_task / simulate_task / gpx_task - writes into State
   broadcast_loop  reads State, builds sentences, sends to clients at --rate
-  serve_forever   accepts TCP connections
+  serve_forever   accepts TCP connections - one listener per --port value,
+                  all sharing a single client set, so every client receives
+                  the same stream whichever port it connected to
 
 State holds the most recent reading; every field is Optional, because "no
 reading" is a normal condition rather than an error. The pos_seq counter is
@@ -235,7 +239,7 @@ from typing import Optional
 
 KNOT_PER_MPS = 1.943844
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 
 # --------------------------------------------------------------------------- #
@@ -972,6 +976,10 @@ class Server:
 
     async def handle(self, reader, writer):
         peer = writer.get_extra_info("peername")
+        # With several --port values the local port says which client is which
+        local = writer.get_extra_info("sockname")
+        if local and len(self.args.ports) > 1:
+            peer = f"{peer} on port {local[1]}"
         self.clients.add(writer)
         self.log(f"TCP: connected {peer} (clients: {len(self.clients)})")
         try:
@@ -1050,8 +1058,11 @@ def parse_args():
         description="Windows Sensors API -> NMEA 0183 over TCP")
     p.add_argument("--host", default="0.0.0.0",
                    help="listen address (default 0.0.0.0, every interface)")
-    p.add_argument("--port", type=int, default=10110,
-                   help="TCP port (default 10110, the IANA port for NMEA 0183)")
+    p.add_argument("--port", default="10110", metavar="N[,N...]",
+                   help="TCP port, or a comma-separated list of ports to "
+                        "listen on at once - the same sentences go to every "
+                        "client on every port (default 10110, the IANA port "
+                        "for NMEA 0183)")
     p.add_argument("--rate", type=float, default=5.0,
                    help="broadcast frequency in Hz (default 5)")
     p.add_argument("--sentences", default="gps,zda,vtg,hdg,att",
@@ -1110,8 +1121,24 @@ def parse_args():
         p.error("--rate must be > 0")
     if a.stale <= 0:
         p.error("--stale must be > 0")
-    if not 1 <= a.port <= 65535:
-        p.error("--port must be in the range 1-65535")
+    # --port accepts "10110" or "10110,10111,...". Duplicates are dropped
+    # (binding the same port twice would fail), order is preserved.
+    ports = []
+    for item in a.port.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            n = int(item)
+        except ValueError:
+            p.error(f"--port: {item!r} is not a number")
+        if not 1 <= n <= 65535:
+            p.error(f"--port: {n} is outside the range 1-65535")
+        if n not in ports:
+            ports.append(n)
+    if not ports:
+        p.error("--port must name at least one port")
+    a.ports = ports
     # A replayed track is simulated data, so it has to be flagged as such in
     # NMEA (GGA 8 / RMC mode S) rather than pose as a satellite fix.
     if a.gpx:
@@ -1141,36 +1168,51 @@ async def main():
         def make_source():
             return sensor_task(state, args, log)
 
+    # One listener per port, all feeding the same Server: a client on any port
+    # lands in the same client set and receives the same sentences. This is
+    # how two plotters that each insist on their own port (OpenCPN on 10110,
+    # AvNav on 10111, say) can read one stream at the same time.
     server = Server(args, log)
-    try:
-        srv = await asyncio.start_server(server.handle, args.host, args.port)
-    except OSError as e:
-        # WSAEADDRINUSE lands in errno (asyncio wraps the error), not winerror;
-        # 48/98 are the BSD/Linux equivalents.
-        hint = ""
-        in_use = {10048, 48, 98}
-        if e.errno in in_use or getattr(e, "winerror", None) in in_use:
-            hint = (f"\n       port {args.port} is already in use. Find out by "
-                    f"what with:\n         Get-NetTCPConnection -LocalPort "
-                    f"{args.port}\n       then pick another one with --port")
-        raise Fatal(f"cannot listen on {args.host}:{args.port}: {e}{hint}")
+    listeners = []
+    for port in args.ports:
+        try:
+            listeners.append(
+                await asyncio.start_server(server.handle, args.host, port))
+        except OSError as e:
+            for srv in listeners:   # do not leave earlier ports bound
+                srv.close()
+            # WSAEADDRINUSE lands in errno (asyncio wraps the error), not
+            # winerror; 48/98 are the BSD/Linux equivalents.
+            hint = ""
+            in_use = {10048, 48, 98}
+            if e.errno in in_use or getattr(e, "winerror", None) in in_use:
+                hint = (f"\n       port {port} is already in use. Find out by "
+                        f"what with:\n         Get-NetTCPConnection -LocalPort "
+                        f"{port}\n       then pick another one with --port")
+            raise Fatal(f"cannot listen on {args.host}:{port}: {e}{hint}")
 
-    log(f"TCP: listening on {args.host}:{args.port}, {args.rate:g} Hz, "
+    ports = ",".join(str(x) for x in args.ports)
+    log(f"TCP: listening on {args.host}:{ports}, {args.rate:g} Hz, "
         f"sentences: {','.join(sorted(args.sentences))}")
     if args.host == "0.0.0.0":
         log("TCP: 0.0.0.0 exposes the server on every interface; on an "
             "untrusted network use --host 127.0.0.1", "WARN")
 
-    tasks = [
-        srv.serve_forever(),
+    tasks = [srv.serve_forever() for srv in listeners]
+    tasks += [
         supervise("data source", make_source, log),
         supervise("broadcast", lambda: server.broadcast_loop(state), log),
     ]
     if args.status_interval > 0:
         tasks.append(supervise("status", lambda: server.status_loop(state), log))
 
-    async with srv:
+    try:
         await asyncio.gather(*tasks)
+    finally:
+        for srv in listeners:
+            srv.close()
+        for srv in listeners:
+            await srv.wait_closed()
 
 
 def cli():

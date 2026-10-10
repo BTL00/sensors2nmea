@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sensors2nmea"
-version = "1.0.0"
+version = "1.0.1"
 description = "Windows Sensors API (GNSS, compass, inclinometer) to NMEA 0183 over TCP, with GPX track playback"
 readme = "README.md"
 requires-python = ">=3.9"
